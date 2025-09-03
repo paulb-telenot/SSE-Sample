@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>SSE Event Stream</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        .container {
+            display: flex;
+            justify-content: space-around;
+        }
+
+        .panel {
+            border: 1px solid #ccc;
+            padding: 15px;
+            margin: 10px;
+            width: 45%;
+            min-height: 300px;
+            overflow-y: auto;
+        }
+
+        h2 {
+            text-align: center;
+        }
+
+        .event {
+            background-color: #f0f0f0;
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+<h1>Server-Sent Events Demo</h1>
+
+<div class="container">
+    <div class="panel">
+        <h2>Manual Implementation Events (/events/stream)</h2>
+        <div id="manualEvents"></div>
+    </div>
+
+    <div class="panel">
+        <h2>Library Implementation Events (/lib/events/stream)</h2>
+        <div id="libraryEvents"></div>
+    </div>
+</div>
+
+<script>
+    // Custom reconnect mechanism with backoff for Manual Implementation
+    function connectWithBackoff(url, elementId, prefix) {
+        let eventSource;
+        let reconnectDelay = 1000; // Start with 1 second
+        const maxReconnectDelay = 60000; // Max delay of 1 minute
+
+        function connect() {
+            eventSource = new EventSource(url);
+
+            eventSource.onopen = function () {
+                console.log(`EventSource connected to ${url}.`);
+                const connectDiv = document.createElement('div');
+                connectDiv.className = 'event';
+                connectDiv.style.color = 'green';
+                connectDiv.textContent = 'Connection established.';
+                const eventContainer = document.getElementById(elementId);
+                eventContainer.prepend(connectDiv);
+                setTimeout(() => eventContainer.removeChild(connectDiv), 5000);
+                reconnectDelay = 1000; // Reset delay on successful connection
+            };
+
+            eventSource.onmessage = function (event) {
+                const data = JSON.parse(event.data);
+                const eventDiv = document.createElement('div');
+                eventDiv.className = 'event';
+                eventDiv.textContent = `${prefix}: ${data.message} (ID: ${event.lastEventId || 'N/A'}, Type: ${event.type})`;
+                document.getElementById(elementId).prepend(eventDiv);
+            };
+
+            eventSource.onerror = function (err) {
+                console.error(`EventSource failed for ${url}:`, err);
+                eventSource.close(); // Close current connection
+
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'event';
+                errorDiv.style.color = 'red';
+                errorDiv.textContent = `Connection lost. Reconnecting in ${reconnectDelay / 1000}s...`;
+                document.getElementById(elementId).prepend(errorDiv);
+
+                setTimeout(connect, reconnectDelay); // Schedule reconnect
+                reconnectDelay = Math.min(maxReconnectDelay, reconnectDelay * 2); // Increase delay
+            };
+        }
+
+        connect(); // Initial connection attempt
+    }
+
+    // Manual Implementation uses custom backoff
+    connectWithBackoff('/events/stream?topics=sharedTopic', 'manualEvents', 'Manual Event');
+
+    // Library Implementation uses browser's built-in reconnection
+    const librarySource = new EventSource('/lib/events/stream?topic=sharedTopic');
+
+    librarySource.onmessage = function (event) {
+        const data = JSON.parse(event.data);
+        const eventDiv = document.createElement('div');
+        eventDiv.className = 'event';
+        eventDiv.textContent = `Library Event: ${data.message} (ID: ${event.lastEventId || 'N/A'}, Type: ${event.type})`;
+        document.getElementById('libraryEvents').prepend(eventDiv);
+    };
+
+    librarySource.onerror = function (err) {
+        console.error("Library EventSource failed:", err);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'event';
+        errorDiv.style.color = 'red';
+        errorDiv.textContent = `Library EventSource Error: ${err.message || 'Unknown error'}. Browser will attempt to reconnect.`;
+        document.getElementById('libraryEvents').prepend(errorDiv);
+    };
+</script>
+</body>
+</html>
